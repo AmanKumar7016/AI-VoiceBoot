@@ -1,0 +1,153 @@
+import os
+import uuid
+import requests
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph
+from reportlab.platypus import SimpleDocTemplate
+from reportlab.platypus import Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph
+from dotenv import load_dotenv
+import razorpay
+import openai
+
+# ----------------------------
+# Load Environment Variables
+# ----------------------------
+load_dotenv()
+
+app = FastAPI()
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
+
+RAZORPAY_KEY = os.getenv("RAZORPAY_KEY")
+RAZORPAY_SECRET = os.getenv("RAZORPAY_SECRET")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY, RAZORPAY_SECRET))
+openai.api_key = OPENAI_API_KEY
+
+# ----------------------------
+# Basic Health Check
+# ----------------------------
+@app.get("/")
+def health():
+    return {"status": "AI Voice BPO Running"}
+
+# ----------------------------
+# Twilio Voice Webhook
+# ----------------------------
+@app.post("/voice-webhook")
+async def voice_webhook(request: Request):
+    form = await request.form()
+    user_input = form.get("SpeechResult", "Hello")
+
+    ai_reply = generate_ai_response(user_input)
+
+    twiml_response = f"""
+    <Response>
+        <Say>{ai_reply}</Say>
+    </Response>
+    """
+
+    return JSONResponse(content=twiml_response)
+
+# ----------------------------
+# AI Intent + Response
+# ----------------------------
+def generate_ai_response(user_text):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a professional BPO voice assistant."},
+                {"role": "user", "content": user_text}
+            ]
+        )
+        return response.choices[0].message.content
+    except:
+        return "Thank you. Our team will contact you shortly."
+
+# ----------------------------
+# Generate Payment Link
+# ----------------------------
+class PaymentRequest(BaseModel):
+    amount: int
+    customer_name: str
+    customer_phone: str
+
+@app.post("/generate-payment")
+def generate_payment(data: PaymentRequest):
+    payment_link = razorpay_client.payment_link.create({
+        "amount": data.amount * 100,
+        "currency": "INR",
+        "description": "Service Payment",
+        "customer": {
+            "name": data.customer_name,
+            "contact": data.customer_phone
+        },
+        "notify": {
+            "sms": True,
+            "email": False
+        }
+    })
+
+    return {"payment_link": payment_link["short_url"]}
+
+# ----------------------------
+# Send WhatsApp Message
+# ----------------------------
+@app.post("/send-whatsapp")
+def send_whatsapp(phone: str, message: str):
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+
+    data = {
+        "From": f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+        "To": f"whatsapp:{phone}",
+        "Body": message
+    }
+
+    response = requests.post(url, data=data, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+
+    if response.status_code == 201:
+        return {"status": "Message Sent"}
+    else:
+        raise HTTPException(status_code=400, detail="WhatsApp Send Failed")
+
+# ----------------------------
+# Generate Receipt PDF
+# ----------------------------
+@app.post("/generate-receipt")
+def generate_receipt(customer_name: str, amount: int):
+    receipt_id = str(uuid.uuid4())
+    file_path = f"receipt_{receipt_id}.pdf"
+
+    doc = SimpleDocTemplate(file_path)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("Payment Receipt", styles["Title"]))
+    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(Paragraph(f"Customer: {customer_name}", styles["Normal"]))
+    elements.append(Paragraph(f"Amount Paid: ₹{amount}", styles["Normal"]))
+    elements.append(Paragraph(f"Receipt ID: {receipt_id}", styles["Normal"]))
+
+    doc.build(elements)
+
+    return {"receipt_file": file_path}
+
+# ----------------------------
+# Usage Meter (Basic)
+# ----------------------------
+@app.post("/log-usage")
+def log_usage(call_duration_seconds: int):
+    cost = call_duration_seconds * 0.02  # Example pricing
+    return {"duration": call_duration_seconds, "estimated_cost": cost}
