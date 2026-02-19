@@ -1,0 +1,139 @@
+ai-voice-bpo-platform/
+│
+├── README.md
+├── LICENSE
+├── .gitignore
+├── .env.example
+├── docker-compose.yml
+├── Makefile
+│
+├── docs/
+│   ├── architecture.md
+│   ├── api-spec.yaml
+│   ├── database-schema.md
+│   ├── security-policy.md
+│   ├── deployment-guide.md
+│   └── sequence-diagrams/
+│
+├── infrastructure/
+│   ├── terraform/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── provider.tf
+│   │
+│   ├── kubernetes/
+│   │   ├── namespace.yaml
+│   │   ├── backend-deployment.yaml
+│   │   ├── voice-service.yaml
+│   │   ├── payment-service.yaml
+│   │   ├── ingress.yaml
+│   │   ├── hpa.yaml
+│   │   └── secrets.yaml
+│   │
+│   ├── docker/
+│   │   ├── backend.Dockerfile
+│   │   ├── voice.Dockerfile
+│   │   └── payment.Dockerfile
+│   │
+│   └── nginx/
+│       ├── nginx.conf
+│       └── rate-limit.conf
+│
+├── services/
+│   │
+│   ├── backend-api/
+│   │   ├── app/
+│   │   │   ├── main.py
+│   │   │   ├── config.py
+│   │   │   ├── dependencies.py
+│   │   │   │
+│   │   │   ├── routes/
+│   │   │   │   ├── call_routes.py
+│   │   │   │   ├── payment_routes.py
+│   │   │   │   ├── receipt_routes.py
+│   │   │   │   └── webhook_routes.py
+│   │   │   │
+│   │   │   ├── services/
+│   │   │   │   ├── ai_voice_service.py
+│   │   │   │   ├── payment_service.py
+│   │   │   │   ├── receipt_service.py
+│   │   │   │   ├── whatsapp_service.py
+│   │   │   │   └── sms_service.py
+│   │   │   │
+│   │   │   ├── models/
+│   │   │   │   ├── user_model.py
+│   │   │   │   ├── transaction_model.py
+│   │   │   │   └── call_log_model.py
+│   │   │   │
+│   │   │   ├── middleware/
+│   │   │   │   ├── auth_middleware.py
+│   │   │   │   └── logging_middleware.py
+│   │   │   │
+│   │   │   └── utils/
+│   │   │       ├── jwt_handler.py
+│   │   │       ├── encryption.py
+│   │   │       └── helpers.py
+│   │   │
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   │
+│   ├── ai-voice-engine/
+│   │   ├── stt_module.py
+│   │   ├── tts_module.py
+│   │   ├── intent_detection.py
+│   │   ├── call_flow_manager.py
+│   │   ├── voice_webhook_listener.py
+│   │   └── Dockerfile
+│   │
+│   ├── payment-module/
+│   │   ├── gateway_adapter.py
+│   │   ├── payment_link_generator.py
+│   │   ├── webhook_handler.py
+│   │   ├── invoice_generator.py
+│   │   └── Dockerfile
+│   │
+│   ├── messaging-module/
+│   │   ├── whatsapp_sender.py
+│   │   ├── sms_sender.py
+│   │   ├── template_manager.py
+│   │   └── Dockerfile
+│   │
+│   └── receipt-module/
+│       ├── receipt_pdf_generator.py
+│       ├── receipt_storage.py
+│       └── Dockerfile
+│
+├── database/
+│   ├── migrations/
+│   ├── seed_data.sql
+│   ├── schema.sql
+│   └── docker-postgres.yml
+│
+├── firewall/
+│   ├── waf-rules.md
+│   ├── ip-whitelist.json
+│   ├── api-rate-limit.md
+│   └── tls-setup.md
+│
+├── monitoring/
+│   ├── prometheus.yaml
+│   ├── grafana-dashboard.json
+│   └── logging-config.yaml
+│
+├── ci-cd/
+│   ├── github-actions.yml
+│   ├── azure-pipeline.yml
+│   ├── gitlab-ci.yml
+│   └── sonarcloud.yml
+│
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── load/
+│
+└── scripts/
+    ├── deploy.sh
+    ├── rollback.sh
+    ├── seed_db.sh
+    └── health_check.sh
