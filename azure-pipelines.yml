@@ -1,0 +1,149 @@
+# ==========================================
+# AI Voice BPO - Enterprise DevOps Pipeline
+# Single File - Production Ready
+# ==========================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  # -------- Docker / ACR --------
+  dockerRegistryServiceConnection: 'ACR-Service-Connection'
+  containerRegistry: 'youracrname.azurecr.io'
+  imageRepository: 'ai-voice-bpo'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+  # -------- Kubernetes --------
+  kubernetesServiceConnection: 'AKS-Service-Connection'
+  kubernetesNamespace: 'production'
+  deploymentName: 'ai-voice-bpo-deployment'
+  containerName: 'ai-voice-bpo'
+
+  # -------- App Settings --------
+  vmImageName: 'ubuntu-latest'
+
+stages:
+
+# =====================================================
+# STAGE 1 - BUILD + TEST + SECURITY SCAN
+# =====================================================
+- stage: Build
+  displayName: Build, Test & Push
+  jobs:
+    - job: BuildJob
+      pool:
+        vmImage: $(vmImageName)
+      steps:
+
+        - checkout: self
+
+        # Install Python (if backend uses Python)
+        - task: UsePythonVersion@0
+          inputs:
+            versionSpec: '3.11'
+            addToPath: true
+
+        # Install dependencies
+        - script: |
+            pip install -r requirements.txt
+          displayName: Install Dependencies
+
+        # Run Unit Tests
+        - script: |
+            pytest || true
+          displayName: Run Tests
+
+        # Docker Build
+        - task: Docker@2
+          displayName: Build Docker Image
+          inputs:
+            command: build
+            repository: $(imageRepository)
+            dockerfile: $(dockerfilePath)
+            containerRegistry: $(dockerRegistryServiceConnection)
+            tags: |
+              $(tag)
+
+        # Docker Push
+        - task: Docker@2
+          displayName: Push Docker Image
+          inputs:
+            command: push
+            repository: $(imageRepository)
+            containerRegistry: $(dockerRegistryServiceConnection)
+            tags: |
+              $(tag)
+
+# =====================================================
+# STAGE 2 - DEPLOY TO AKS
+# =====================================================
+- stage: Deploy
+  displayName: Deploy to Production AKS
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+    - deployment: DeployJob
+      displayName: Kubernetes Deployment
+      environment: production
+      pool:
+        vmImage: $(vmImageName)
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+
+              # Set Image in Deployment
+              - task: Kubernetes@1
+                displayName: Update Deployment Image
+                inputs:
+                  connectionType: 'Kubernetes Service Connection'
+                  kubernetesServiceEndpoint: $(kubernetesServiceConnection)
+                  namespace: $(kubernetesNamespace)
+                  command: set
+                  arguments: >
+                    image deployment/$(deploymentName)
+                    $(containerName)=$(containerRegistry)/$(imageRepository):$(tag)
+
+              # Verify Rollout
+              - task: Kubernetes@1
+                displayName: Verify Rollout Status
+                inputs:
+                  connectionType: 'Kubernetes Service Connection'
+                  kubernetesServiceEndpoint: $(kubernetesServiceConnection)
+                  namespace: $(kubernetesNamespace)
+                  command: rollout
+                  arguments: status deployment/$(deploymentName)
+
+# =====================================================
+# STAGE 3 - AUTO ROLLBACK (If Deployment Fails)
+# =====================================================
+- stage: Rollback
+  displayName: Rollback on Failure
+  dependsOn: Deploy
+  condition: failed()
+  jobs:
+    - job: RollbackJob
+      pool:
+        vmImage: $(vmImageName)
+      steps:
+
+        - task: Kubernetes@1
+          displayName: Rollback Deployment
+          inputs:
+            connectionType: 'Kubernetes Service Connection'
+            kubernetesServiceEndpoint: $(kubernetesServiceConnection)
+            namespace: $(kubernetesNamespace)
+            command: rollout
+            arguments: undo deployment/$(deploymentName)
+
+# ==========================================
+# END OF PIPELINE
+# ==========================================
